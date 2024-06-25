@@ -9,7 +9,8 @@
 //  MIT LICENCE
 //
 // Based on this work: https://github.com/lorenzofiamingo/swiftui-cached-async-image
-// Changes: URL instead of URLRequest, non-sendable, 
+// Changes: URL instead of URLRequest, non-sendable.
+
 import SwiftUI
 import OSLog
 
