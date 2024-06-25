@@ -1,0 +1,15 @@
+name: Run Swiftlint
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  swiftlint:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: SwiftLint
+        run: |
+          brew install swiftlint
+          swiftlint --reporter github-actions-logging --strict
