@@ -73,7 +73,7 @@ import OSLog
 ///     }
 ///
 @available(iOS 15.0, macOS 12.0, tvOS 15.0, watchOS 8.0, *)
-public struct CachedAsyncImage<Content>: View where Content: View {
+public struct CachedAsyncImage<Content>: View, @unchecked Sendable where Content: View {
     /// The current phase the async operation is in
     @State
     private var phase: AsyncImagePhase = .empty
