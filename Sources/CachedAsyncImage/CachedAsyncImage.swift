@@ -336,7 +336,7 @@ private extension CachedAsyncImage {
 
 // MARK: - AsyncImageURLSession
 
-private class URLSessionTaskController: NSObject, URLSessionTaskDelegate {
+private class URLSessionTaskController: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     var metrics: URLSessionTaskMetrics?
 
     // https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1643148-urlsession
