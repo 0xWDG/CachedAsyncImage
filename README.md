@@ -16,7 +16,7 @@ CachedAsyncImage is a Swift Package for asynchronously loading images from the w
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/0xWDG/CachedAsyncImage.git", .branch("main")),
+    .package(url: "https://github.com/0xWDG/CachedAsyncImage.git", branch: "main"),
 ],
 targets: [
     .target(name: "MyTarget", dependencies: [
