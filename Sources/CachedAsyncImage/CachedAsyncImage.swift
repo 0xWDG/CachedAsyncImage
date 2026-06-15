@@ -12,7 +12,6 @@
 // Changes: URL instead of URLRequest, non-sendable.
 
 import SwiftUI
-import OSLog
 
 /// A view that asynchronously loads and displays an image.
 ///
@@ -73,7 +72,7 @@ import OSLog
 ///     }
 ///
 @available(iOS 15.0, macOS 12.0, tvOS 15.0, watchOS 8.0, *)
-public struct CachedAsyncImage<Content>: View, @unchecked Sendable where Content: View {
+public struct CachedAsyncImage<Content>: View where Content: View {
     /// The current phase the async operation is in
     @State
     private var phase: AsyncImagePhase = .empty
@@ -81,8 +80,8 @@ public struct CachedAsyncImage<Content>: View, @unchecked Sendable where Content
     /// The URL to fetch
     private let url: URL?
 
-    /// Shared URL Session
-    private let urlSession: URLSession
+    /// The cache used by the loading session.
+    private let urlCache: URLCache
 
     private let scale: CGFloat
 
@@ -90,14 +89,9 @@ public struct CachedAsyncImage<Content>: View, @unchecked Sendable where Content
 
     private let content: (AsyncImagePhase) -> Content
 
-    private let logger = Logger(
-        subsystem: "nl.wesleydegroot.CachedAsyncImage",
-        category: "CachedAsyncImage"
-    )
-
     public var body: some View {
         content(phase)
-            .task(id: url) {
+            .task(id: LoadIdentifier(url: url, scale: scale, urlCache: urlCache)) {
                 await loadImage()
             }
     }
@@ -231,50 +225,35 @@ public struct CachedAsyncImage<Content>: View, @unchecked Sendable where Content
         transaction: Transaction = Transaction(),
         @ViewBuilder content: @escaping (AsyncImagePhase) -> Content
     ) {
-        let configuration = URLSessionConfiguration.default
-        configuration.urlCache = urlCache
-        self.urlSession = URLSession(configuration: configuration)
+        self.urlCache = urlCache
         self.scale = scale
         self.transaction = transaction
         self.content = content
         self.url = url
         self.phase = .empty
-
-        do {
-            if let url = url,
-               let image = try cachedImage(
-                with: url,
-                cache: urlCache
-            ) {
-                self.phase = .success(image)
-            }
-        } catch {
-            self.phase = .failure(error)
-        }
     }
 
+    @MainActor
     private func loadImage() async {
+        phase = .empty
+
+        guard let url else {
+            return
+        }
+
         do {
-            if let url = url {
-                let (image, metrics) = try await remoteImage(
-                    from: URLRequest(url: url),
-                    session: urlSession
-                )
-                if let metrics = metrics,
-                    metrics.transactionMetrics.last?.resourceFetchType == .localCache {
-                    phase = .success(image)
-                } else {
-                    withAnimation(transaction.animation) {
-                        phase = .success(image)
-                    }
-                }
-            } else {
-                withAnimation(transaction.animation) {
-                    phase = .empty
-                }
+            let data = try await CachedAsyncImageLoader.data(from: url, cache: urlCache)
+            try Task.checkCancellation()
+            let image = try await CachedAsyncImageLoader.image(from: data, scale: scale)
+            try Task.checkCancellation()
+
+            withTransaction(transaction) {
+                phase = .success(image)
             }
+        } catch is CancellationError {
+            return
         } catch {
-            withAnimation(transaction.animation) {
+            withTransaction(transaction) {
                 phase = .failure(error)
             }
         }
@@ -282,74 +261,14 @@ public struct CachedAsyncImage<Content>: View, @unchecked Sendable where Content
 }
 
 @available(iOS 15.0, macOS 12.0, tvOS 15.0, watchOS 8.0, *)
-private extension AsyncImage {
-    struct LoadingError: Error {
-    }
-}
+private struct LoadIdentifier: Hashable {
+    let url: URL?
+    let scale: CGFloat
+    let cacheIdentifier: ObjectIdentifier
 
-@available(iOS 15.0, macOS 12.0, tvOS 15.0, watchOS 8.0, *)
-private extension CachedAsyncImage {
-    private func remoteImage(
-        from request: URLRequest,
-        session: URLSession
-    ) async throws -> (Image, URLSessionTaskMetrics?) {
-        let (data, metrics) = try await session.data(for: request)
-        if let metrics = metrics,
-            metrics.redirectCount > 0,
-            let lastResponse = metrics.transactionMetrics.last?.response,
-            let urlCache = session.configuration.urlCache {
-            let requests = metrics.transactionMetrics.map { $0.request }
-            requests.forEach(urlCache.removeCachedResponse)
-            let lastCachedResponse = CachedURLResponse(response: lastResponse, data: data)
-            urlCache.storeCachedResponse(lastCachedResponse, for: request)
-        }
-        return (try image(from: data), metrics)
-    }
-
-    private func cachedImage(with url: URL, cache: URLCache) throws -> Image? {
-        guard let cachedResponse = cache.cachedResponse(
-            for: URLRequest(url: url)
-        ) else {
-            return nil
-        }
-
-        logger.debug("Image from cache for \(url.absoluteString)")
-        return try image(from: cachedResponse.data)
-    }
-
-    private func image(from data: Data) throws -> Image {
-#if os(macOS)
-        if let nsImage = NSImage(data: data) {
-            return Image(nsImage: nsImage)
-        } else {
-            throw AsyncImage<Content>.LoadingError()
-        }
-#else
-        if let uiImage = UIImage(data: data, scale: scale) {
-            return Image(uiImage: uiImage)
-        } else {
-            throw AsyncImage<Content>.LoadingError()
-        }
-#endif
-    }
-}
-
-// MARK: - AsyncImageURLSession
-
-private class URLSessionTaskController: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    var metrics: URLSessionTaskMetrics?
-
-    // https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1643148-urlsession
-    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        self.metrics = metrics
-    }
-}
-
-@available(iOS 15.0, macOS 12.0, tvOS 15.0, watchOS 8.0, *)
-private extension URLSession {
-    func data(for request: URLRequest) async throws -> (Data, URLSessionTaskMetrics?) {
-        let controller = URLSessionTaskController()
-        let (data, _) = try await data(for: request, delegate: controller)
-        return (data, controller.metrics)
+    init(url: URL?, scale: CGFloat, urlCache: URLCache) {
+        self.url = url
+        self.scale = scale
+        self.cacheIdentifier = ObjectIdentifier(urlCache)
     }
 }

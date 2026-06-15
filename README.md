@@ -9,10 +9,10 @@ CachedAsyncImage is a Swift Package for asynchronously loading images from the w
 
 ## Requirements
 
-- Swift 5.9+ (Xcode 15+)
-- iOS 13+, macOS 10.15+
+- Swift 5.8+
+- iOS 15+, macOS 12+, tvOS 15+, watchOS 8+
 
-## Installation (Pakage.swift)
+## Installation (Package.swift)
 
 ```swift
 dependencies: [
@@ -71,10 +71,10 @@ struct ContentView: View {
 }
 ```
 
-In addition to `AsyncImage` initializers, you have the possibilities to specify the cache you want to use (by default `URLCache.shared` is used), and to use `URLRequest` instead of `URL`:
+In addition to `AsyncImage` initializers, you can specify the cache you want to use. By default, `URLCache.shared` is used:
 
 ```swift
-CachedAsyncImage(urlRequest: logoURLRequest, urlCache: .imageCache)
+CachedAsyncImage(url: logoURL, urlCache: .imageCache)
 ```
 
 ```swift
